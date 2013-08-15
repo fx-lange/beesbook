@@ -9,7 +9,8 @@
 
 #include "cv.h"
 
-void getCenterImg(cv::Mat & srcMat,cv::Mat & centerImg,float centerSize, float centerX, float centerY, float radius){
+//REVISIT circle instead of rectangle => centroid!
+void getCenterImg(cv::Mat & srcMat,cv::Mat & centerImg,float centerSize, float centerX, float centerY){
 
 	cv::Rect centerRoi = cvRect(centerX-centerSize/2.f,
 			centerY-centerSize/2.f,
@@ -55,7 +56,8 @@ float getOrientationRad(cv::Mat Gx,cv::Mat Gy, cv::Mat G,int count,std::vector<c
 		float x = Gx.at<float>(maxIdx[0],maxIdx[1]);
 		float y = Gy.at<float>(maxIdx[0],maxIdx[1]);
 
-		//TODO swap x y - why?!
+		//TODO swap x y - why?! ->
+		//TODO try without swap => remove realRealTagCoord swap in draw()
 		swap(x,y);
 
 		float angleRad = atan2(y,x);
