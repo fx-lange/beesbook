@@ -176,36 +176,32 @@ void beesbookApp::update(){
 	selectionImg.setFromPixels(colorImg.getRoiPixelsRef());
 	colorImg.resetROI();
 
-	//color -> gray
+	//color selection -> gray selection
 	grayImg.allocate(roi.width,roi.height);
 	grayImg = selectionImg;
 
-	//thresh
+	//thresh - only for drawing
 	binaryImg.allocate(roi.width,roi.height);
 	binaryImg = grayImg;
 	binaryImg.threshold(thresholdValue);
 
-	//canny
+	//canny - only for drawing (to see what the hough transform is doing)
 	cannyImg.allocate(roi.width,roi.height);
 //	cv::Canny(grayImg.get,cannyImg.getCvImage(),5.,5.);//(double)cannyLow.value.getValue(),(double)cannyHigh.value.getValue());
 	cvCanny(grayImg.getCvImage(),cannyImg.getCvImage(),cannyHigh/2.f,cannyHigh);
 	cannyImg.flagImageChanged();
 
-	//ellipse detection
+	//ellipse detection //TODO use these results instead of houghCircles
 	if(eNewEllipseDetection){
 		cv::Mat cannyMat (cannyImg.getCvImage());
 		ellipseCandidate = detect_Ellipse(cannyMat);
 		eNewEllipseDetection = false;
 	}
 
-	//hough
-//	cvHoughCircles(grayImg,&circles,CV_HOUGH_GRADIENT,1,minCenterDistance,cannyHigh,akkuThresh,minRadius,maxRadius);
-//	cvHoughCircles(grayImg.getCvImage(),circles,CV_HOUGH_GRADIENT,1.,(int)minCenterDistance); //cannyHigh,akkuThresh,minRadius,maxRadius);
-//	cvHoughCircles(grayImg.getCvImage(),&circles,CV_HOUGH_GRADIENT,1,5);
-//	cvHoughCircles()
-	cv::Mat grayTest(grayImg.getCvImage());
+	//hough transformation for circles //TODO only use detect_Ellipse()
+	cv::Mat houghInputMat(grayImg.getCvImage());
 	circles.clear();
-	cv::HoughCircles(grayTest,circles,CV_HOUGH_GRADIENT,1,minCenterDistance,cannyHigh,akkuThresh,minRadius,maxRadius);
+	cv::HoughCircles(houghInputMat,circles,CV_HOUGH_GRADIENT,1,minCenterDistance,cannyHigh,akkuThresh,minRadius,maxRadius);
 
 	//orientation
 	if(circles.size()>0 && eNextLoop){
@@ -214,68 +210,42 @@ void beesbookApp::update(){
 		ofPoint center = ofPoint(circle[0],circle[1]);
 		float radius = circle[2];
 
-		//roi around center
-		centerAreaImg.allocate(centerAreaSize,centerAreaSize);//TODO GUI
-		ofRectangle centerRoi = ofRectangle(center.x-centerAreaSize/2.f,center.y-centerAreaSize/2.f,centerAreaSize,centerAreaSize);
+		//test rotation
 		ofxCvGrayscaleImage grayTmp;
 		grayTmp = grayImg;
 		grayTmp.rotate(testRotate,circle[0],circle[1]);
 
-		grayTmp.setROI(centerRoi);
-		centerAreaImg.setFromPixels(grayTmp.getRoiPixelsRef());
-		grayTmp.resetROI();
-
+		//get center img //TODO use a bigger ROI but same size for G (G,Gx,Gy)
 		cv::Mat centerImgMat;
 		cv::Mat grayImgMat = grayTmp.getCvImage();
 		getCenterImg(grayImgMat,centerImgMat,centerAreaSize,center.x,center.y);
 
-		//WORKAROUND
+		//WORKAROUND for drawing - //TODO only realloc if centerAreaSize has changed - MEMORY LEAK
 		IplImage tmpImg = (IplImage)centerImgMat;
-		IplImage * centerImg=cvCloneImage(&tmpImg);
+		IplImage * centerImg = cvCloneImage(&tmpImg);
+		centerAreaImg.allocate(centerAreaSize,centerAreaSize);//TODO GUI
+		centerAreaImg = centerImg;
 
-		//sobel
-//		cv::Sobel(centerAreaImg,sobelX,)
-		IplImage * iplGx = cvCreateImage(cvSize(centerAreaSize,centerAreaSize),IPL_DEPTH_32F,1);
-		IplImage * iplGy = cvCreateImage(cvSize(centerAreaSize,centerAreaSize),IPL_DEPTH_32F,1);
-		IplImage * iplGxAbs = cvCreateImage(cvSize(centerAreaSize,centerAreaSize),IPL_DEPTH_32F,1);
-		IplImage * iplGyAbs = cvCreateImage(cvSize(centerAreaSize,centerAreaSize),IPL_DEPTH_32F,1);
-		imageGx.allocate(centerAreaSize,centerAreaSize);
-		imageGy.allocate(centerAreaSize,centerAreaSize);
-		//Gx Gy
-		cvSobel(centerImg,iplGx,0,1,3+sobelKernelSize*2);
-		cvSobel(centerImg,iplGy,1,0,3+sobelKernelSize*2);
-		cvConvertImage(iplGx,imageGx.getCvImage());
-		cvConvertImage(iplGy,imageGy.getCvImage());
-		imageGx.flagImageChanged();
-		imageGy.flagImageChanged();
-
-		//calculate Gradient G
-		IplImage * G = cvCreateImage(cvSize(centerAreaSize,centerAreaSize),IPL_DEPTH_32F,1);
-		imageG.allocate(centerAreaSize,centerAreaSize);
-		//scale Gx & Gy
-//		cout << "gx" << endl;
-//		debugPrint(iplGx);
-		cvAbs(iplGx,iplGxAbs);
-		cvAbs(iplGy,iplGyAbs);
-		cvAdd(iplGxAbs,iplGyAbs,G);
-		cout << "G" << endl;
-//		debugPrint(G);
-		cvConvert(G,imageG.getCvImage());
-		imageG.flagImageChanged();
-		if(ePrintDebug){
-			cout << "Gx:" << endl;
-			debugPrintPixels(imageGx.getPixels(),centerAreaSize,centerAreaSize);
-			cout << "G:" << endl;
-//			debugPrintPixels(G->imageData,centerAreaSize,centerAreaSize);
-//			cout << "G 8Bit:" << endl;
-			debugPrintPixels(imageG.getPixels(),centerAreaSize,centerAreaSize);
-			cout << endl << endl;
-			ePrintDebug = false;
-//			getOrientation(imageGx.getPixels(),imageGy.getPixels(),imageGx.getCvImage(),centerAreaSize,centerAreaSize,20);
-		}
+		//calc gradients
 		cv::Mat dstG,dstGx,dstGy;
 		calcGradients(centerImgMat,dstG,dstGx,dstGy,3+sobelKernelSize*2,scaleDown);
 		orientation = getOrientationRad(dstGx,dstGy,dstG,topX,maxCoords);
+
+		//WORKAROUND for drawing - //TODO only realloc if centerAreaSize has changed - MEMORY LEAK
+//		IplImage tmpImgG = (IplImage)dstG;
+//		IplImage * tmpClonePtrG = cvCloneImage(&tmpImgG);
+//		imageG.allocate(centerAreaSize,centerAreaSize);
+//		imageG = tmpClonePtrG;
+//
+//		IplImage tmpImgGx = (IplImage)dstGx;
+//		IplImage * tmpClonePtrGx = cvCloneImage(&tmpImgGx);
+//		imageGx.allocate(centerAreaSize,centerAreaSize);
+//		imageGx = tmpClonePtrGx;
+//
+//		IplImage tmpImgGy = (IplImage)dstGy;
+//		IplImage * tmpClonePtrGy = cvCloneImage(&tmpImgGy);
+//		imageGy.allocate(centerAreaSize,centerAreaSize);
+//		imageGy = tmpClonePtrGy; <--- NOT WORKING
 
 
 		// ----- !!!!!!!!!!!!!!!!!!! --- //
@@ -293,9 +263,6 @@ void beesbookApp::update(){
 				idealTagCoord[y*4+x][1] = y+1;
 			}
 		}
-
-//		cv::Mat coord(2,1,CV_32FC1);
-
 
 
 		//-2.5 (center of 4x4 grid)
@@ -334,7 +301,7 @@ void beesbookApp::update(){
 			realTagCoords[i][1] += center.y;
 		}
 
-		calcTagGrayMeanValues(grayTest,realTagCoords,grayMeanValues);
+		calcTagGrayMeanValues(houghInputMat,realTagCoords,grayMeanValues);
 
 		float referenceWhite = (grayMeanValues[whiteCenterIdx] + grayMeanValues[whiteCenterIdx2]) / 2.f;
 		float referenceBlack = (grayMeanValues[blackCenterIdx] + grayMeanValues[blackCenterIdx2]) / 2.f;
@@ -349,7 +316,7 @@ void beesbookApp::update(){
 
 
 
-		//OR
+		//OR NEW - not working yet //TODO
 //		realTagCoords.clear();
 //		realTagCoords.resize(16);
 //
@@ -460,22 +427,22 @@ void beesbookApp::draw(){
 	ofPopMatrix();
 
 	// draw gradients
-	ofPushMatrix();
-	ofPushStyle();
-	ofTranslate(rowWidth,binaryImg.height*scaleTmp);
-	float scaleROIs = rowWidth / (centerAreaSize * 3.f);
-	ofScale(scaleROIs,scaleROIs);
-	centerAreaImg.draw(0,0);
-	imageGx.draw(centerAreaSize,0);
-	imageGy.draw(centerAreaSize*2,0);
-	imageG.draw(0,centerAreaSize);
-	ofTranslate(0,centerAreaSize);
-	ofSetColor(255,0,0);
-	for(int i=0;i<(int)maxCoords.size();++i){
-		ofEllipse(maxCoords[i].x,maxCoords[i].y,1,1);
-	}
-	ofPopStyle();
-	ofPopMatrix();
+//	ofPushMatrix();
+//	ofPushStyle();
+//	ofTranslate(rowWidth,binaryImg.height*scaleTmp);
+//	float scaleROIs = rowWidth / (centerAreaSize * 3.f);
+//	ofScale(scaleROIs,scaleROIs);
+//	centerAreaImg.draw(0,0);
+//	imageGx.draw(centerAreaSize,0);
+//	imageGy.draw(centerAreaSize*2,0);
+//	imageG.draw(0,centerAreaSize);
+//	ofTranslate(0,centerAreaSize);
+//	ofSetColor(255,0,0);
+//	for(int i=0;i<(int)maxCoords.size();++i){
+//		ofEllipse(maxCoords[i].x,maxCoords[i].y,1,1);
+//	}
+//	ofPopStyle();
+//	ofPopMatrix();
 
 	roiSelection.draw();
 
