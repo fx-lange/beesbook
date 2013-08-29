@@ -226,7 +226,7 @@ void beesbookApp::update(){
 		centerAreaImg.allocate(centerAreaSize,centerAreaSize);//TODO GUI
 		centerAreaImg = centerImg;
 
-		//calc gradients
+		//calc gradients & orientation
 		cv::Mat dstG,dstGx,dstGy;
 		calcGradients(centerImgMat,dstG,dstGx,dstGy,3+sobelKernelSize*2,scaleDown);
 		orientation = getOrientationRad(dstGx,dstGy,dstG,topX,maxCoords);
@@ -265,14 +265,14 @@ void beesbookApp::update(){
 		}
 
 
-		//-2.5 (center of 4x4 grid)
+		//-2.5 (center of 4x4 grid) = translate to center before rotation
 		for(int i=0;i<(int)idealTagCoord.size();++i){
 			idealTagCoord[i][0] -= 2.5;
 			idealTagCoord[i][1] -= 2.5;
 			cout << idealTagCoord[i][0] << "/" << idealTagCoord[i][1] << endl;
 		}
 
-		//create rotation matrix
+		//create rotation matrix (+scale)
 		double rotateScale[2][2] = {{fieldWidth*cos(orientation),-1 * fieldWidth * sin(orientation)}
 									,{fieldWidth*sin(orientation),fieldWidth * cos(orientation)}};
 
@@ -301,6 +301,8 @@ void beesbookApp::update(){
 			realTagCoords[i][1] += center.y;
 		}
 
+
+		//decoding
 		calcTagGrayMeanValues(houghInputMat,realTagCoords,grayMeanValues);
 
 		float referenceWhite = (grayMeanValues[whiteCenterIdx] + grayMeanValues[whiteCenterIdx2]) / 2.f;
